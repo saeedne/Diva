@@ -42,7 +42,7 @@
   const form=document.querySelector('#searchForm'), citySelect=document.querySelector('#city'), treeBox=document.querySelector('#categoryTree'), selectedCount=document.querySelector('#selectedCount'), urlInput=document.querySelector('#divarUrl'), limitInput=document.querySelector('#limit'), queryInput=document.querySelector('#queryText'), openDivarLink=document.querySelector('#openDivarLink');
   const statusBox=document.querySelector('#status'), tbody=document.querySelector('#results'), tableHead=document.querySelector('#results').closest('table').querySelector('thead tr'), countBox=document.querySelector('#resultCount');
   const searchButton=document.querySelector('#searchButton'), csvButton=document.querySelector('#csvButton'), excelButton=document.querySelector('#excelButton');
-  let categories=[], latestAds=[], resultColumns=[];
+  let categories=[], latestAds=[], resultColumns=[], lastExportParams='';
   const selected=new Set();
   const groupRules=[
     ['real-estate|residential|apartment|house-villa|commercial-property|buy-land|rent-land|office-space|buy-residential|rent-residential','املاک و مستغلات'],
@@ -79,11 +79,11 @@
   citySelect.addEventListener('change',updateUrl);
   queryInput.addEventListener('input',updateUrl);
   limitInput.addEventListener('input',updateUrl);
-  form.addEventListener('submit',async event=>{event.preventDefault();if(!validLimit()||!selected.size)return;csvButton.disabled=excelButton.disabled=true;searchButton.disabled=true;statusBox.className='status';statusBox.textContent='در حال دریافت آگهی‌ها و مشخصات هر مورد…';countBox.textContent='';
-    try{const response=await fetch(`/ads?${exportParams()}`);const data=await response.json();if(!response.ok)throw new Error(data.detail||'دریافت آگهی‌ها ناموفق بود.');latestAds=data.ads||[];resultColumns=data.columns||[];render(latestAds,resultColumns,data.rows||[]);countBox.textContent=`${latestAds.length} آگهی دریافت شد`;statusBox.textContent=latestAds.length?'نتایج و مشخصات آماده است.':'برای این انتخاب نتیجه‌ای پیدا نشد.';csvButton.disabled=excelButton.disabled=!latestAds.length}
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!validLimit()||!selected.size)return;lastExportParams=exportParams().toString();const requestUrl=`/ads?${lastExportParams}`;selected.clear();refreshTreeChecks();syncSelection();csvButton.disabled=excelButton.disabled=true;searchButton.disabled=true;statusBox.className='status';statusBox.textContent='در حال دریافت آگهی‌ها و مشخصات هر مورد…';countBox.textContent='';
+    try{const response=await fetch(requestUrl);const data=await response.json();if(!response.ok)throw new Error(data.detail||'دریافت آگهی‌ها ناموفق بود.');latestAds=data.ads||[];resultColumns=data.columns||[];render(latestAds,resultColumns,data.rows||[]);countBox.textContent=`${latestAds.length} آگهی دریافت شد`;statusBox.textContent=latestAds.length?'نتایج و مشخصات آماده است.':'برای این انتخاب نتیجه‌ای پیدا نشد.';csvButton.disabled=excelButton.disabled=!latestAds.length}
     catch(error){showError(error.message||'ارتباط با برنامه برقرار نشد.');tbody.replaceChildren();const tr=document.createElement('tr'),td=cell('دریافت ناموفق بود.','empty');td.colSpan=6;tr.append(td);tbody.append(tr)}finally{searchButton.disabled=!(citySelect.value&&selected.size)}
   });
-  csvButton.addEventListener('click',()=>{if(validLimit())window.location.href=`/ads.csv?${exportParams()}`});excelButton.addEventListener('click',()=>{if(validLimit())window.location.href=`/ads.xlsx?${exportParams()}`});loadCatalog();
+  csvButton.addEventListener('click',()=>{if(lastExportParams)window.location.href=`/ads.csv?${lastExportParams}`});excelButton.addEventListener('click',()=>{if(lastExportParams)window.location.href=`/ads.xlsx?${lastExportParams}`});loadCatalog();
 </script>
 </body>
 </html>
