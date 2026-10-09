@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>تخمین قیمت ملک</title>
+  <style>
+    :root{font-family:Tahoma,Arial,sans-serif;color:#20212b;background:#f5f4f8}*{box-sizing:border-box}body{margin:0;padding:24px 14px}.wrap{max-width:1100px;margin:auto}.card{background:#fff;border:1px solid #e8e5ef;border-radius:18px;padding:22px;box-shadow:0 8px 30px #28204a0a}h1{font-size:23px;margin:0 0 8px}.hint{color:#686879;font-size:14px;line-height:1.9;margin:0 0 18px}.back{display:inline-block;color:#5135a6;text-decoration:none;margin-bottom:14px}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.field label,.section-label{display:block;font-size:13px;font-weight:bold;margin-bottom:7px}.field input,.field select,.search-input{width:100%;height:44px;border:1px solid #d8d5e1;border-radius:10px;padding:0 11px;font:inherit;background:#fff}.field input[type=number]{direction:ltr}.wide{grid-column:1/-1}.typeahead{position:relative}.suggestions{position:absolute;z-index:5;top:72px;right:0;left:0;max-height:250px;overflow:auto;background:#fff;border:1px solid #d8d5e1;border-radius:10px;box-shadow:0 8px 24px #28204a20}.suggestions:empty{display:none}.suggestions button{display:block;width:100%;text-align:right;padding:9px 12px;border:0;border-bottom:1px solid #eeeef2;background:white;font:inherit;cursor:pointer}.suggestions button:hover,.suggestions button:focus{background:#f4f1fa}.selection-note,.small-note{font-size:12px;color:#777;margin:6px 0 0}.picker{border:1px solid #e8e5ef;border-radius:12px;padding:14px}.picker h2{font-size:16px;margin:0 0 7px}.picker p{font-size:12px;color:#777;margin:0 0 10px}.check-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:3px;max-height:220px;overflow:auto;margin-top:8px}.check-list label,.choice-list label{display:flex;align-items:center;gap:8px;padding:6px;font-size:13px;cursor:pointer}.check-list input,.choice-list input,.amenities input{accent-color:#6047b7;width:16px;height:16px}.city-line{display:grid;grid-template-columns:1fr;gap:5px}.choice-list{display:flex;flex-wrap:wrap;gap:8px 18px}.choice-list label{font-size:14px}.amenities{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px 18px;border:1px solid #e8e5ef;border-radius:12px;padding:12px}.amenities label{display:inline-flex;align-items:center;gap:7px;font-size:14px}.btn{height:46px;border:0;border-radius:10px;padding:0 18px;font:inherit;font-weight:bold;cursor:pointer;background:#5d43b5;color:#fff}.btn.secondary{height:40px;background:#eeeaf8;color:#493499}.btn:disabled{opacity:.6;cursor:wait}.status{min-height:24px;margin:14px 0;color:#666}.status.error{color:#b42318}.result{margin-top:18px;border:1px solid #e8e5ef;border-radius:14px;overflow:hidden}.result-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px;background:#f4f1fa}.result-bar h2{font-size:18px;margin:0}.estimate-summary{padding:18px;border-bottom:1px solid #eeeef2}.price{font-size:25px;font-weight:bold;color:#493499}.range,.meta,.method{font-size:13px;color:#666;margin-top:7px}.comps{padding:16px}.comps h3{margin:0 0 10px;font-size:16px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:650px;font-size:13px}th,td{padding:10px;border-bottom:1px solid #eeeef2;text-align:right;vertical-align:top}th{background:#f8f7fa;white-space:nowrap}td a{color:#5135a6;text-decoration:none;font-weight:bold}.disclaimer{font-size:12px;line-height:1.8;color:#777;margin-top:18px}@media(max-width:760px){body{padding:10px}.card{padding:15px}.form-grid{grid-template-columns:1fr}.wide,.amenities{grid-column:auto}.btn{width:100%}.result-bar{align-items:flex-start;flex-direction:column}}
+    @media print{body{padding:0;background:#fff}body *{visibility:hidden!important}#result,#result *{visibility:visible!important}#result{position:absolute;inset:0;width:100%;margin:0;border:0;box-shadow:none;overflow:visible}#printButton{display:none!important}.table-wrap{overflow:visible}table{min-width:0;font-size:10pt}th,td{border:1px solid #bbb}.result-bar{background:#fff;border-bottom:1px solid #999}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <a class="back" href="/">← بازگشت به جست‌وجوی موارد</a>
+      <h1>تخمین قیمت ملک</h1>
+      <p class="hint">شهر، محله‌ها، دستهٔ ملکی و مشخصات را انتخاب کن. برنامه تا ۵۰۰ مورد تازهٔ همان دسته را در بسته‌های ۵۰تایی می‌خواند و قیمت موارد نزدیک‌تر را با توجه به متراژ، سن بنا و مشخصات انتخابی مقایسه می‌کند.</p>
+      <form id="estimateForm" class="form-grid">
+        <div class="field typeahead">
+          <label for="citySearch">شهر</label>
+          <input id="citySearch" class="search-input" type="search" autocomplete="off" placeholder="حروف اول شهر را تایپ کن؛ مثلاً «م»" required>
+          <div id="citySuggestions" class="suggestions" role="listbox"></div>
+          <div id="cityNote" class="selection-note">برای انتخاب شهر، نامش را تایپ و از فهرست انتخاب کن.</div>
+        </div>
+        <div class="field">
+          <label for="adCount">تعداد موارد برای بررسی (حداکثر ۵۰۰)</label>
+          <input id="adCount" name="ad_count" type="number" min="1" max="500" step="1" value="500" required>
+        </div>
+        <section class="picker wide">
+          <h2>محله‌ها</h2>
+          <p>پس از انتخاب شهر، محله‌های موردنظر را تیک بزن. اگر چیزی انتخاب نکنی، کل شهر بررسی می‌شود.</p>
+          <input id="districtSearch" class="search-input" type="search" placeholder="جست‌وجوی محله" disabled>
+          <div id="districtList" class="check-list">ابتدا شهر را انتخاب کن.</div>
+          <div id="districtCount" class="small-note"></div>
+        </section>
+        <fieldset class="picker wide">
+          <legend class="section-label">نوع معامله</legend>
+          <div class="choice-list">
+            <label><input type="radio" name="transaction" value="sale" checked> فروش</label>
+            <label><input type="radio" name="transaction" value="rent"> اجاره</label>
+          </div>
+        </fieldset>
+        <fieldset class="picker wide">
+          <legend class="section-label">دسته‌های ملکی (یک یا چند مورد)</legend>
+          <div class="choice-list">
+            <label><input type="checkbox" name="property_type" value="apartment"> آپارتمان</label>
+            <label><input type="checkbox" name="property_type" value="residential"> مسکونی (همهٔ موارد)</label>
+            <label><input type="checkbox" name="property_type" value="villa"> خانه و ویلایی</label>
+          </div>
+        </fieldset>
+        <div class="field"><label for="area">متراژ بنا (متر مربع) *</label><input id="area" name="area" type="number" min="10" max="10000" step="1" required></div>
+        <div class="field"><label for="landArea">متراژ زمین (اختیاری)</label><input id="landArea" name="land_area" type="number" min="0" step="1"></div>
+        <div class="field"><label for="yearBuilt">سال ساخت (شمسی)</label><input id="yearBuilt" name="year_built" type="number" min="1300" max="1500" step="1" placeholder="مثلاً ۱۳۹۸"></div>
+        <div class="field"><label for="floor">طبقه</label><input id="floor" name="floor" type="number" min="-5" max="100" step="1"></div>
+        <div class="field"><label for="rooms">تعداد اتاق</label><input id="rooms" name="rooms" type="number" min="0" max="20" step="1"></div>
+        <fieldset class="amenities">
+          <legend>امکاناتی که ملک دارد</legend>
+          <label><input type="checkbox" name="elevator"> آسانسور</label>
+          <label><input type="checkbox" name="parking"> پارکینگ</label>
+          <label><input type="checkbox" name="storage"> انباری</label>
+          <label><input type="checkbox" name="balcony"> بالکن یا تراس</label>
+        </fieldset>
+        <button id="estimateButton" class="btn wide" type="submit">برآورد قیمت با موارد مشابه</button>
+      </form>
+      <div id="status" class="status" role="status"></div>
+      <section id="result" class="result" hidden>
+        <div class="result-bar"><h2>نتیجهٔ تخمین</h2><button id="printButton" class="btn secondary" type="button">چاپ همین جدول</button></div>
+        <div class="estimate-summary">
+          <div id="estimatePrice" class="price"></div>
+          <div id="estimatePerMeter" class="range"></div>
+          <div id="estimateRange" class="range"></div>
+          <div id="estimateMeta" class="meta"></div>
+          <div id="estimateMethod" class="method"></div>
+        </div>
+        <div class="comps">
+          <h3>موارد مشابه برای مقایسه</h3>
+          <div class="table-wrap"><table><thead><tr><th>عنوان</th><th>محله</th><th>متراژ</th><th>قیمت پیشنهادی</th><th>قیمت هر متر</th><th>شباهت</th></tr></thead><tbody id="comparables"></tbody></table></div>
+        </div>
+      </section>
+      <p class="disclaimer">برای اجاره، عدد تخمینی مربوط به اجارهٔ ماهانه است و مبلغ ودیعه را شامل نمی‌شود. برآورد فروش و اجاره از قیمت‌های پیشنهادی موارد عمومی ساخته می‌شود، نه قیمت قطعی معامله؛ نتیجه را راهنمای تقریبی در نظر بگیر.</p>
+    </section>
+  </main>
+<script>
+  const cityInput=document.querySelector('#citySearch'),citySuggestions=document.querySelector('#citySuggestions'),cityNote=document.querySelector('#cityNote'),districtSearch=document.querySelector('#districtSearch'),districtList=document.querySelector('#districtList'),districtCount=document.querySelector('#districtCount'),form=document.querySelector('#estimateForm'),button=document.querySelector('#estimateButton'),statusBox=document.querySelector('#status'),resultBox=document.querySelector('#result');
+  let cities=[],chosenCity=null,districts=[];
+  const selectedDistricts=new Set();
+  const fold=value=>String(value||'').trim().replace(/ي/g,'ی').replace(/ك/g,'ک').toLocaleLowerCase('fa');
+  const money=(value,transaction)=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(value)+(transaction==='rent'?' تومان در ماه':' تومان');
+  function renderCitySuggestions(){citySuggestions.replaceChildren();const query=fold(cityInput.value);if(!query)return;const matches=cities.filter(city=>fold(city.name).startsWith(query));if(!matches.length){const empty=document.createElement('div');empty.className='suggestions-empty';empty.textContent='شهری با این حروف آغاز نمی‌شود.';citySuggestions.append(empty);return}for(const city of matches.slice(0,40)){const option=document.createElement('button');option.type='button';option.role='option';option.textContent=city.name;option.addEventListener('click',()=>selectCity(city));citySuggestions.append(option)}}
+  function selectCity(city){chosenCity=city;cityInput.value=city.name;citySuggestions.replaceChildren();cityNote.textContent=`شهر انتخاب‌شده: ${city.name}`;loadDistricts()}
+  function renderDistricts(){districtList.replaceChildren();const query=fold(districtSearch.value),matches=districts.filter(item=>fold(item.name).includes(query));if(!matches.length){districtList.textContent=districts.length?'محله‌ای با این نام پیدا نشد.':'ابتدا شهر را انتخاب کن.';return}for(const item of matches){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.value=item.id;check.checked=selectedDistricts.has(item.id);check.addEventListener('change',()=>{if(check.checked&&selectedDistricts.size>=20){check.checked=false;setError('حداکثر ۲۰ محله را می‌توان هم‌زمان انتخاب کرد.');return}if(check.checked)selectedDistricts.add(item.id);else selectedDistricts.delete(item.id);districtCount.textContent=selectedDistricts.size?`${new Intl.NumberFormat('fa-IR').format(selectedDistricts.size)} محله انتخاب شده`:'همهٔ محله‌های شهر';statusBox.textContent='';statusBox.className='status'});label.append(check,document.createTextNode(item.name));districtList.append(label)}}
+  async function loadDistricts(){districts=[];selectedDistricts.clear();districtSearch.value='';districtSearch.disabled=!chosenCity;districtCount.textContent='همهٔ محله‌های شهر';renderDistricts();if(!chosenCity)return;districtList.textContent='در حال دریافت محله‌ها…';try{const response=await fetch(`/catalog/districts?city=${encodeURIComponent(chosenCity.slug)}`),data=await response.json();if(!response.ok)throw new Error(data.detail||'دریافت محله‌ها ناموفق بود.');districts=data.districts||[];renderDistricts()}catch(error){districtList.textContent=error.message||'دریافت محله‌ها ناموفق بود.'}}
+  function setError(message){statusBox.textContent=message;statusBox.className='status error'}
+  function showComparables(items,transaction){const host=document.querySelector('#comparables');host.replaceChildren();for(const item of items){const row=document.createElement('tr'),titleCell=document.createElement('td'),link=document.createElement('a'),districtCell=document.createElement('td'),areaCell=document.createElement('td'),priceCell=document.createElement('td'),meterCell=document.createElement('td'),scoreCell=document.createElement('td');link.href=item.url;link.target='_blank';link.rel='noopener';link.textContent=item.title;titleCell.append(link);districtCell.textContent=item.district||'ثبت نشده';areaCell.textContent=`${new Intl.NumberFormat('fa-IR').format(item.area)} متر`;priceCell.textContent=money(item.price,transaction);meterCell.textContent=`${new Intl.NumberFormat('fa-IR').format(item.price_per_meter)} تومان`;scoreCell.textContent=`${new Intl.NumberFormat('fa-IR').format(item.similarity)}٪`;row.append(titleCell,districtCell,areaCell,priceCell,meterCell,scoreCell);host.append(row)}}
+  cityInput.addEventListener('input',()=>{chosenCity=null;cityNote.textContent='برای انتخاب شهر، نامش را تایپ و از فهرست انتخاب کن.';citySuggestions.replaceChildren();loadDistricts();renderCitySuggestions()});
+  cityInput.addEventListener('keydown',event=>{if(event.key==='Enter'&&citySuggestions.querySelector('button')){event.preventDefault();citySuggestions.querySelector('button').click()}});
+  districtSearch.addEventListener('input',renderDistricts);
+  document.querySelector('#printButton').addEventListener('click',()=>window.print());
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!chosenCity){setError('شهر را از فهرست پیشنهادها انتخاب کن.');cityInput.focus();return}const transaction=form.elements.transaction.value,propertyTypes=[...form.querySelectorAll('input[name="property_type"]:checked')].map(input=>input.value),adCount=Number(form.elements.ad_count.value);if(!Number.isInteger(adCount)||adCount<1||adCount>500){setError('تعداد مورد باید بین ۱ تا ۵۰۰ باشد.');form.elements.ad_count.focus();return}if(!propertyTypes.length){setError('حداقل یک دستهٔ ملکی را تیک بزن.');return}resultBox.hidden=true;statusBox.className='status';statusBox.textContent='در حال دریافت موارد در بسته‌های ۵۰تایی…';button.disabled=true;const payload={city:chosenCity.slug,transaction,property_types:propertyTypes,districts:[...selectedDistricts],ad_count:adCount};for(const key of ['area','land_area','year_built','floor','rooms']){const value=form.elements[key].value;if(value!=='')payload[key]=Number(value)}for(const key of ['elevator','parking','storage','balcony'])payload[key]=form.elements[key].checked;
+    try{const response=await fetch('/estimate/property',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await response.json();if(!response.ok)throw new Error(data.detail||'تخمین قیمت انجام نشد.');const mode=data.transaction;document.querySelector('#estimatePrice').textContent=`${mode==='rent'?'اجارهٔ ماهانهٔ تخمینی':'قیمت تخمینی'}: ${money(data.estimate,mode)}`;document.querySelector('#estimatePerMeter').textContent=`قیمت تخمینی هر متر: ${money(data.estimate_per_meter,mode)}`;document.querySelector('#estimateRange').textContent=`بازهٔ تقریبی: ${money(data.low,mode)} تا ${money(data.high,mode)}`;document.querySelector('#estimateMeta').textContent=`اطمینان ${data.confidence} · ${new Intl.NumberFormat('fa-IR').format(data.comparable_count)} مورد مشابه از ${new Intl.NumberFormat('fa-IR').format(data.fetched_count)} مورد بررسی شد`;document.querySelector('#estimateMethod').textContent=data.method;showComparables(data.comparables||[],mode);resultBox.hidden=false;statusBox.textContent='برآورد آماده است.'}
+    catch(error){setError(error.message||'ارتباط با برنامه برقرار نشد.')}finally{button.disabled=false}});
+  fetch('/catalog/cities').then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.detail||'دریافت شهرها ناموفق بود.');cities=data.cities||[]}).catch(error=>setError(error.message||'دریافت شهرها ناموفق بود.'));
+</script>
+</body>
+</html>

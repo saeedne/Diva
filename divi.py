@@ -9,6 +9,7 @@ import json
 import os
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.parse import urlparse
@@ -158,6 +159,39 @@ def _city_id(city_slug: str) -> str:
     raise DivarError(404, f"City slug not found in Divar's city list: {city_slug}")
 
 
+def get_district_list(city_slug: str) -> list[dict[str, str]]:
+    """Return a city's public Divar neighborhood list with IDs used by web search."""
+    city_id = _city_id(city_slug)
+    try:
+        response = session.get(f"{DIVAR_API}/places/cities/{city_id}/districts", timeout=25)
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise DivarError(502, f"دریافت فهرست محله‌ها از دیوار ناموفق بود: {exc}") from exc
+    except ValueError as exc:
+        raise DivarError(502, "پاسخ فهرست محله‌های دیوار JSON معتبر نیست.") from exc
+
+    items = payload
+    if isinstance(payload, dict):
+        items = next((payload[key] for key in ("districts", "items", "data")
+                      if isinstance(payload.get(key), list)), [])
+    districts: dict[str, dict[str, str]] = {}
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            district_id = next((str(item[key]) for key in ("id", "district_id", "value")
+                                if item.get(key) is not None), "")
+            name = next((str(item[key]) for key in ("name", "display", "name_persian", "title")
+                         if item.get(key)), "")
+            slug = next((str(item[key]) for key in ("slug", "second_slug") if item.get(key)), "")
+            if district_id.isdigit() and name:
+                districts[district_id] = {"id": district_id, "name": name, "slug": slug}
+    if not districts:
+        raise DivarError(502, "ساختار فهرست محله‌های دیوار شناخته نشد.")
+    return sorted(districts.values(), key=lambda district: district["name"])
+
+
 def _parse_divar_url(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in {"divar.ir", "www.divar.ir"}:
@@ -299,7 +333,26 @@ def _enrich_ad(ad: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     return ad
 
 
-def search_divar(city_slug: str, category_slug: str, limit: int, query_text: str = "") -> list[dict[str, Any]]:
+def _enrich_posts(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        pending = {executor.submit(get_ad_details, ad["token"]): ad for ad in posts}
+        for future in as_completed(pending):
+            ad = pending[future]
+            try:
+                _enrich_ad(ad, future.result())
+            except DivarError as exc:
+                ad["detail_error"] = exc.detail
+                ad.update({"location": ad.get("district") or ad.get("city"), "area": None,
+                           "year_built": None, "total_price": _price_number(ad.get("price")),
+                           "total_price_text": ad.get("price"), "price_per_meter": None,
+                           "price_per_meter_text": None, "rooms": None, "floor": None,
+                           "amenities": {}, "attributes": {}})
+    return posts
+
+
+def search_divar(city_slug: str, category_slug: str, limit: int, query_text: str = "",
+                 district_ids: list[str] | None = None, batch_size: int | None = None,
+                 pause_seconds: float = 1.0) -> list[dict[str, Any]]:
     city_id = _city_id(city_slug)
     # Divar's SEO route names are not always the enum used in its search payload.
     category_route = category_slug
@@ -310,6 +363,8 @@ def search_divar(city_slug: str, category_slug: str, limit: int, query_text: str
     form_data = {"category": {"str": {"value": category_slug}}}
     if query_text.strip():
         form_data["query"] = {"str": {"value": query_text.strip()}}
+    if district_ids:
+        form_data["districts"] = {"repeated_string": {"value": [str(value) for value in district_ids]}}
     search_data = {
         "form_data": {"data": form_data},
         "server_payload": {
@@ -325,10 +380,14 @@ def search_divar(city_slug: str, category_slug: str, limit: int, query_text: str
         "cumulative_widgets_count": 0,
     }
     results: list[dict[str, Any]] = []
+    posts: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    # Usually 24 items per page. Stop at the user's limit, no next cursor, or a short safety cap.
-    for _ in range(6):
+    # Divar usually returns 24 cards per page. Batched callers can pause after each enriched chunk.
+    max_pages = max(6, (limit + 23) // 24 + 3)
+    for _ in range(max_pages):
+        if len(results) + len(posts) >= limit:
+            break
         body = {
             "city_ids": [city_id],
             "disable_recommendation": False,
@@ -366,11 +425,18 @@ def search_divar(city_slug: str, category_slug: str, limit: int, query_text: str
             if post and post["token"] not in seen:
                 seen.add(post["token"])
                 post["category"] = category_slug
-                results.append(post)
-                if len(results) >= limit:
+                posts.append(post)
+                if len(results) + len(posts) >= limit:
                     break
 
-        if len(results) >= limit:
+        if batch_size and batch_size > 0:
+            while len(posts) >= batch_size and len(results) < limit:
+                batch = posts[:batch_size]
+                del posts[:batch_size]
+                results.extend(_enrich_posts(batch))
+                if len(results) < limit and pause_seconds > 0:
+                    time.sleep(pause_seconds)
+        if len(results) + len(posts) >= limit:
             break
 
         next_data = (payload.get("pagination") or {}).get("data")
@@ -379,22 +445,15 @@ def search_divar(city_slug: str, category_slug: str, limit: int, query_text: str
             break
         pagination = next_data
 
-    results = results[:limit]
-    # Fetch details with a small worker pool so listings return promptly without flooding Divar.
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        pending = {executor.submit(get_ad_details, ad["token"]): ad for ad in results}
-        for future in as_completed(pending):
-            ad = pending[future]
-            try:
-                _enrich_ad(ad, future.result())
-            except DivarError as exc:
-                ad["detail_error"] = exc.detail
-                ad.update({"location": ad.get("district") or ad.get("city"), "area": None,
-                           "year_built": None, "total_price": _price_number(ad.get("price")),
-                           "total_price_text": ad.get("price"), "price_per_meter": None,
-                           "price_per_meter_text": None, "rooms": None, "floor": None,
-                           "amenities": {}, "attributes": {}})
-    return results
+    if batch_size and batch_size > 0:
+        while posts and len(results) < limit:
+            batch = posts[:min(batch_size, limit - len(results))]
+            del posts[:len(batch)]
+            results.extend(_enrich_posts(batch))
+            if posts and len(results) < limit and pause_seconds > 0:
+                time.sleep(pause_seconds)
+        return results[:limit]
+    return _enrich_posts(posts[:limit])
 
 
 def get_ad_details(token: str) -> dict[str, Any]:
