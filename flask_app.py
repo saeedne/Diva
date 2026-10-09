@@ -170,6 +170,14 @@ def health():
     return jsonify({"ok": True, "service": "unofficial-divar-search"})
 
 
+@app.get("/service-worker.js")
+def service_worker():
+    response = send_file(BASE_DIR / "service-worker.js", mimetype="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/catalog")
 def catalog():
     return jsonify({"cities": get_city_list(), "categories": get_category_list()})
