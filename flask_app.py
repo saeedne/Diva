@@ -1,0 +1,273 @@
+"""Flask application for searching public Divar listings."""
+
+from __future__ import annotations
+
+import csv
+import re
+import threading
+import time
+from copy import deepcopy
+from io import BytesIO, StringIO
+from pathlib import Path
+
+from flask import Flask, Response, jsonify, request, send_file
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+from divi import (DivarError, _parse_divar_url, _price_number, get_ad_details,
+                       get_category_list, get_city_list, search_divar)
+
+BASE_DIR = Path(__file__).resolve().parent
+app = Flask(__name__)
+_SEARCH_CACHE = {}
+_SEARCH_CACHE_LOCK = threading.Lock()
+
+
+BASE_EXPORT_FIELDS = [
+    ("شهر", "fixed:city"), ("محله", "fixed:district"),
+    ("قیمت هر متر", "fixed:price_per_meter"), ("قیمت", "fixed:price"),
+    ("متراژ", "fixed:area"), ("متراژ زمین", "fixed:land_area"), ("عنوان", "fixed:title"),
+]
+
+
+def normalize_label(value):
+    return re.sub(r"[\s‌\u200c؟?]+", "", str(value or "")).replace("ي", "ی").replace("ك", "ک").casefold()
+
+
+def find_attribute(ad, *labels):
+    attributes = ad.get("attributes") or {}
+    normalized = {normalize_label(key): value for key, value in attributes.items()}
+    for label in labels:
+        value = normalized.get(normalize_label(label))
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def attribute_number(value):
+    if value in (None, ""):
+        return None
+    text = str(value).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+    text = text.replace("٬", ",").replace("٫", ".")
+    match = re.search(r"\d+(?:[,.]\d+)?", text)
+    if not match:
+        return value
+    try:
+        number = float(match.group().replace(",", "."))
+        return int(number) if number.is_integer() else number
+    except ValueError:
+        return value
+
+
+def dynamic_columns(ads):
+    columns = list(BASE_EXPORT_FIELDS)
+    reserved = {normalize_label(label) for label, _ in BASE_EXPORT_FIELDS}
+    reserved.update(normalize_label(label) for label in (
+        "شناسه", "دسته", "دسته‌بندی", "توضیحات کامل", "توضیحات", "قیمت کل", "قیمت کل ملک",
+        "قیمت هر متر", "قیمت هر متر مربع", "قیمت متری", "متراژ", "زیربنا", "مساحت",
+        "متراژ بنا", "مساحت بنا", "متراژ زمین", "مساحت زمین", "متراژ کل زمین", "مساحت کل زمین",
+        "شهر", "محله", "قیمت",
+    ))
+    seen = set(reserved)
+    for ad in ads:
+        for label in (ad.get("attributes") or {}):
+            key = normalize_label(label)
+            if "تصویر" in key and "همینملک" in key:
+                continue
+            if any(term in key for term in ("قیمتکلملک", "توضیحاتکامل", "شناسهآگهی", "دستهبندی")):
+                continue
+            if label and key not in seen:
+                columns.append((label, f"spec:{label}"))
+                seen.add(key)
+        for label in (ad.get("amenities") or {}):
+            key = normalize_label(label)
+            if label and key not in seen:
+                columns.append((label, f"amenity:{label}"))
+                seen.add(key)
+    columns.extend([("لینک آگهی", "fixed:url"), ("تصویر", "fixed:image_url")])
+    return columns
+
+
+def export_value(ad, field, csv_mode=False):
+    if field.startswith("fixed:"):
+        name = field[6:]
+        if name == "land_area":
+            value = attribute_number(find_attribute(ad, "متراژ زمین", "مساحت زمین", "متراژ کل زمین", "مساحت کل زمین"))
+        elif name == "area":
+            value = ad.get("area") or attribute_number(find_attribute(ad, "متراژ", "زیربنا", "مساحت", "متراژ بنا", "مساحت بنا"))
+        elif name == "price_per_meter":
+            value = ad.get("price_per_meter") or _price_number(
+                find_attribute(ad, "قیمت هر متر", "قیمت هر متر مربع", "قیمت متری"))
+        elif name == "price":
+            value = ad.get("total_price") or _price_number(
+                find_attribute(ad, "قیمت کل", "قیمت کل ملک", "قیمت") or ad.get("price"))
+        elif name == "image_url":
+            has_matching_photos = ""
+            for label, answer in (ad.get("attributes") or {}).items():
+                normalized = normalize_label(label)
+                if "تصویر" in normalized and "همینملک" in normalized:
+                    has_matching_photos = normalize_label(answer)
+                    break
+            affirmative = has_matching_photos.startswith(("بله", "بلی", "آری", "yes"))
+            value = ad.get("image_url") if affirmative else ""
+        else:
+            value = ad.get(name)
+        if csv_mode and name in {"price", "price_per_meter"} and isinstance(value, (int, float)):
+            return f"{int(value):,}"
+        return value if value is not None else ""
+    if field.startswith("spec:"):
+        return (ad.get("attributes") or {}).get(field[5:], "") or ""
+    if field.startswith("amenity:"):
+        value = (ad.get("amenities") or {}).get(field[8:])
+        return "دارد" if value is True else "ندارد" if value is False else ""
+    return ad.get(field, "") or ""
+
+
+def fetch_ads(city_slug, category_slugs, limit, query_text=""):
+    category_slugs = tuple(dict.fromkeys(category_slugs))
+    query_text = query_text.strip()
+    key = (city_slug, category_slugs, limit, query_text)
+    now = time.monotonic()
+    with _SEARCH_CACHE_LOCK:
+        cached = _SEARCH_CACHE.get(key)
+        if cached and now - cached[0] < 300:
+            return deepcopy(cached[1])
+    per_category = max(1, (limit + len(category_slugs) - 1) // len(category_slugs))
+    ads = []
+    seen_tokens = set()
+    for category_slug in category_slugs:
+        for ad in search_divar(city_slug, category_slug, per_category, query_text=query_text):
+            if ad["token"] not in seen_tokens:
+                seen_tokens.add(ad["token"])
+                ads.append(ad)
+                if len(ads) >= limit:
+                    break
+        if len(ads) >= limit:
+            break
+    with _SEARCH_CACHE_LOCK:
+        _SEARCH_CACHE[key] = (time.monotonic(), deepcopy(ads))
+    return ads
+
+
+@app.errorhandler(DivarError)
+def handle_divar_error(error: DivarError):
+    return jsonify({"detail": error.detail}), error.status_code
+
+
+@app.get("/")
+def home():
+    return send_file(BASE_DIR / "index.html")
+
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True, "service": "unofficial-divar-search"})
+
+
+@app.get("/catalog")
+def catalog():
+    return jsonify({"cities": get_city_list(), "categories": get_category_list()})
+
+
+def search_parameters():
+    url = request.args.get("url", "").strip()
+    raw_limit = request.args.get("limit", "50")
+    try:
+        limit = int(raw_limit)
+    except ValueError as exc:
+        raise DivarError(400, "تعداد آگهی باید عدد باشد.") from exc
+    if not 1 <= limit <= 100:
+        raise DivarError(400, "تعداد آگهی باید بین ۱ تا ۱۰۰ باشد.")
+    city_slug, url_category = _parse_divar_url(url)
+    category_slugs = request.args.getlist("category") or [url_category]
+    category_slugs = list(dict.fromkeys(category_slugs))
+    if len(category_slugs) > 5:
+        raise DivarError(400, "حداکثر ۵ دسته‌بندی را هم‌زمان انتخاب کن.")
+    if any(not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", slug) for slug in category_slugs):
+        raise DivarError(400, "شناسهٔ دسته‌بندی معتبر نیست.")
+    query_text = request.args.get("query", "").strip()
+    if len(query_text) > 200:
+        raise DivarError(400, "عبارت جست‌وجو نباید بیشتر از ۲۰۰ نویسه باشد.")
+    return city_slug, category_slugs, limit, query_text
+
+
+@app.get("/ads")
+def get_ads():
+    city_slug, category_slugs, limit, query_text = search_parameters()
+    ads = fetch_ads(city_slug, category_slugs, limit, query_text)
+    columns = dynamic_columns(ads)
+    return jsonify({"source": "divar.ir", "city": city_slug, "categories": category_slugs,
+                    "category": category_slugs[0],
+                    "count": len(ads), "columns": [{"label": label, "field": field}
+                                                      for label, field in columns],
+                    "rows": [[export_value(ad, field) for _, field in columns] for ad in ads],
+                    "ads": ads})
+
+
+@app.get("/ads.csv")
+def download_ads_csv():
+    city_slug, category_slugs, limit, query_text = search_parameters()
+    ads = fetch_ads(city_slug, category_slugs, limit, query_text)
+    output = StringIO(newline="")
+    writer = csv.writer(output)
+    columns = dynamic_columns(ads)
+    writer.writerow([label for label, _ in columns])
+    writer.writerows([[export_value(ad, field, csv_mode=True) for _, field in columns] for ad in ads])
+    return Response("\ufeff" + output.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="divar_ads.csv"'})
+
+
+@app.get("/ads.xlsx")
+def download_ads_xlsx():
+    city_slug, category_slugs, limit, query_text = search_parameters()
+    ads = fetch_ads(city_slug, category_slugs, limit, query_text)
+    columns = dynamic_columns(ads)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "آگهی‌های دیوار"
+    sheet.sheet_view.rightToLeft = True
+    sheet.append([label for label, _ in columns])
+    for ad in ads:
+        sheet.append([export_value(ad, field) for _, field in columns])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5941A9")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    for index, (label, _) in enumerate(columns, 1):
+        width = min(48, max(16, len(label) * 2))
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    price_columns = {index for index, (_, field) in enumerate(columns, 1)
+                     if field in {"fixed:price", "fixed:price_per_meter"}}
+    for row_index, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+        row_fill = PatternFill("solid", fgColor="F4F1FA" if row_index % 2 == 0 else "FFFFFF")
+        for column_index, cell in enumerate(row, start=1):
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.fill = row_fill
+            if column_index in price_columns and isinstance(cell.value, (int, float)):
+                cell.number_format = "#,##0"
+    hyperlink_columns = {index: field for index, (_, field) in enumerate(columns, 1)
+                         if field in {"fixed:url", "fixed:image_url"}}
+    for column_index, field in hyperlink_columns.items():
+        for row_index in range(2, sheet.max_row + 1):
+            cell = sheet.cell(row_index, column_index)
+            if cell.value:
+                cell.hyperlink = str(cell.value)
+                cell.value = "مشاهده آگهی" if field == "fixed:url" else "مشاهده تصویر"
+                cell.font = Font(color="0563C1", underline="single")
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return send_file(stream, as_attachment=True, download_name=f"divar_{city_slug}_{category_slugs[0]}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.get("/ads/<token>")
+def get_ad(token: str):
+    return jsonify(get_ad_details(token))
+
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8000, debug=False)
