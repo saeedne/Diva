@@ -197,7 +197,18 @@ def service_worker():
 @app.get("/catalog")
 @require_any_page("search", "estimate")
 def catalog():
-    return jsonify({"cities": get_city_list(), "categories": get_category_list()})
+    categories = get_category_list()
+    user = current_user()
+    if not user["is_admin"]:
+        property_pattern = re.compile(
+            r"real-estate|residential|apartment|house-villa|commercial-property|buy-land|rent-land|office-space|buy-residential|rent-residential|املاک|مسکن|آپارتمان|زمین|ویلا",
+            re.IGNORECASE,
+        )
+        categories = [
+            category for category in categories
+            if property_pattern.search(" ".join(str(category.get(key, "")) for key in ("slug", "name", "path")))
+        ]
+    return jsonify({"cities": get_city_list(), "categories": categories})
 
 
 @app.get("/catalog/cities")
