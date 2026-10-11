@@ -1,0 +1,16 @@
+{% extends "auth_base.html" %}
+{% block title %}دسترسی محدود است{% endblock %}
+{% block content %}
+<section class="auth-card access-card">
+  <p class="eyebrow">دسترسی محدود است</p>
+  <h1>این صفحه برای حساب شما فعال نیست</h1>
+  <p class="muted">اگر به این صفحه نیاز داری، از مدیر بخواه دسترسی لازم را فعال کند.</p>
+  <div class="access-actions">
+    <button class="secondary-button" type="button" onclick="if(history.length>1){history.back()}else{location.href='/login'}">بازگشت به صفحهٔ قبل</button>
+    <form method="post" action="{{ url_for('auth.logout') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button class="primary-button" type="submit">خروج</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

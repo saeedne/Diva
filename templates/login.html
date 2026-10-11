@@ -1,0 +1,16 @@
+{% extends "auth_base.html" %}
+{% block title %}ورود{% endblock %}
+{% block content %}
+<section class="auth-card">
+  <p class="eyebrow">ورود امن</p>
+  <h1>به حساب کاربری وارد شو</h1>
+  <p class="muted">برای استفاده از صفحه‌های مجاز، نام کاربری و گذرواژه‌ات را وارد کن.</p>
+  <form method="post" class="auth-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <label>نام کاربری<input name="username" autocomplete="username" required autofocus></label>
+    <label>گذرواژه<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="primary-button" type="submit">ورود</button>
+  </form>
+</section>
+{% endblock %}

@@ -5,5 +5,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+instance/
 *.xlsx
 *.csv
+.vscode/
+boj-deploy.zip
+Divar.zip

@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "جست‌وجو و تخمین دیوار",
-  "short_name": "دیوار",
-  "description": "جست‌وجوی آگهی‌ها و تخمین قیمت ملک",
+  "name": "Official Bachelor of Justice",
+  "short_name": "OBOJ",
+  "description": "Official Bachelor of Justice",
   "lang": "fa",
   "dir": "rtl",
   "start_url": "/",

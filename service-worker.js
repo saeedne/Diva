@@ -1,7 +1,5 @@
-const CACHE_NAME = 'divar-webapp-v1';
+const CACHE_NAME = 'divar-webapp-v2';
 const APP_SHELL = [
-  '/',
-  '/estimate',
   '/static/manifest.webmanifest',
   '/static/pwa.js',
   '/static/icons/icon-192.png',
@@ -28,13 +26,9 @@ self.addEventListener('fetch', event => {
       url.pathname.startsWith('/estimate/property') || url.pathname === '/health') return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then(response => {
-      if (response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
-      }
-      return response;
-    }).catch(async () => (await caches.match(request)) || (await caches.match('/'))));
+    // Authenticated pages contain session-specific navigation and CSRF tokens.
+    // Keep them out of the shared app-shell cache.
+    event.respondWith(fetch(request));
     return;
   }
 

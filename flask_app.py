@@ -11,16 +11,19 @@ from copy import deepcopy
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_file
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from divi import (DivarError, _parse_divar_url, _price_number, get_ad_details,
                        get_category_list, get_city_list, get_district_list, search_divar)
+from auth import auth, consume_report_quota, csrf_token, current_user, init_auth, require_any_page, require_page, user_page_response
 
 BASE_DIR = Path(__file__).resolve().parent
 app = Flask(__name__)
+init_auth(app)
+app.register_blueprint(auth)
 _SEARCH_CACHE = {}
 _SEARCH_CACHE_LOCK = threading.Lock()
 
@@ -160,9 +163,22 @@ def handle_divar_error(error: DivarError):
     return jsonify({"detail": error.detail}), error.status_code
 
 
+@app.errorhandler(403)
+def handle_forbidden(_error):
+    return render_template("access_denied.html", csrf=csrf_token()), 403
+
+
+@app.get("/access-denied")
+def access_denied():
+    if not current_user():
+        return Response("برای مشاهدهٔ این صفحه وارد حساب شو.", status=401, mimetype="text/plain")
+    return render_template("access_denied.html", csrf=csrf_token())
+
+
 @app.get("/")
+@require_page("search")
 def home():
-    return send_file(BASE_DIR / "index.html")
+    return user_page_response("index.html")
 
 
 @app.get("/health")
@@ -179,16 +195,19 @@ def service_worker():
 
 
 @app.get("/catalog")
+@require_any_page("search", "estimate")
 def catalog():
     return jsonify({"cities": get_city_list(), "categories": get_category_list()})
 
 
 @app.get("/catalog/cities")
+@require_any_page("search", "estimate")
 def city_catalog():
     return jsonify({"cities": get_city_list()})
 
 
 @app.get("/catalog/districts")
+@require_any_page("search", "estimate")
 def district_catalog():
     city_slug = request.args.get("city", "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", city_slug):
@@ -222,8 +241,14 @@ def search_parameters():
 
 
 @app.get("/ads")
+@require_page("search")
 def get_ads():
     city_slug, category_slugs, limit, query_text, district_ids = search_parameters()
+    if not consume_report_quota(current_user(), "search", "جست‌وجوی آگهی انجام شد.", {
+        "city": city_slug, "categories": category_slugs, "limit": limit,
+        "query": query_text, "districts": district_ids,
+    }):
+        return jsonify({"detail": "سهمیهٔ گزارش‌گیری تمام شده است؛ حساب قفل شد. از مدیر بخواه گذرواژه را بازنشانی کند."}), 429
     ads = fetch_ads(city_slug, category_slugs, limit, query_text, district_ids)
     columns = dynamic_columns(ads)
     return jsonify({"source": "divar.ir", "city": city_slug, "categories": category_slugs,
@@ -235,8 +260,14 @@ def get_ads():
 
 
 @app.get("/ads.csv")
+@require_page("search")
 def download_ads_csv():
     city_slug, category_slugs, limit, query_text, district_ids = search_parameters()
+    if not consume_report_quota(current_user(), "csv_export", "فایل CSV دریافت شد.", {
+        "city": city_slug, "categories": category_slugs, "limit": limit,
+        "query": query_text, "districts": district_ids,
+    }):
+        return jsonify({"detail": "سهمیهٔ گزارش‌گیری تمام شده است؛ حساب قفل شد. از مدیر بخواه گذرواژه را بازنشانی کند."}), 429
     ads = fetch_ads(city_slug, category_slugs, limit, query_text, district_ids)
     output = StringIO(newline="")
     writer = csv.writer(output)
@@ -248,8 +279,14 @@ def download_ads_csv():
 
 
 @app.get("/ads.xlsx")
+@require_page("search")
 def download_ads_xlsx():
     city_slug, category_slugs, limit, query_text, district_ids = search_parameters()
+    if not consume_report_quota(current_user(), "xlsx_export", "فایل Excel دریافت شد.", {
+        "city": city_slug, "categories": category_slugs, "limit": limit,
+        "query": query_text, "districts": district_ids,
+    }):
+        return jsonify({"detail": "سهمیهٔ گزارش‌گیری تمام شده است؛ حساب قفل شد. از مدیر بخواه گذرواژه را بازنشانی کند."}), 429
     ads = fetch_ads(city_slug, category_slugs, limit, query_text, district_ids)
     columns = dynamic_columns(ads)
     workbook = Workbook()
@@ -371,11 +408,13 @@ def _property_similarity(subject, ad):
 
 
 @app.get("/estimate")
+@require_page("estimate")
 def estimate_page():
-    return send_file(BASE_DIR / "estimate.html")
+    return user_page_response("estimate.html")
 
 
 @app.post("/estimate/property")
+@require_page("estimate")
 def estimate_property():
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -439,6 +478,13 @@ def estimate_property():
         if isinstance(data.get(key), bool):
             subject["amenities"][key] = data[key]
 
+    audit_details = {
+        "city": city_slug, "transaction": transaction, "categories": category_slugs,
+        "districts": district_ids, "ad_count": ad_count, "property": subject,
+    }
+    if not consume_report_quota(current_user(), "estimate", "تخمین قیمت ملک درخواست شد.", audit_details):
+        return jsonify({"detail": "سهمیهٔ گزارش‌گیری تمام شده است؛ حساب قفل شد. از مدیر بخواه گذرواژه را بازنشانی کند."}), 429
+
     ads = fetch_ads(city_slug, category_slugs, ad_count, district_ids=district_ids,
                     batch_size=50, pause_seconds=1.0)
     comparable_values = []
@@ -491,6 +537,7 @@ def estimate_property():
 
 
 @app.get("/ads/<token>")
+@require_page("search")
 def get_ad(token: str):
     return jsonify(get_ad_details(token))
 

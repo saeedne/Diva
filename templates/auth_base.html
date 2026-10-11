@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}حساب کاربری{% endblock %} | دیوا</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <header class="auth-brand">
+      <span class="brand-mark">د</span>
+      <div><strong>دیوا</strong><span>مدیریت آگهی و تخمین قیمت</span></div>
+    </header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}<section class="flash-list" aria-live="polite">
+        {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+      </section>{% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

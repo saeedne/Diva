@@ -1,0 +1,16 @@
+{% extends "auth_base.html" %}
+{% block title %}ساخت مدیر اصلی{% endblock %}
+{% block content %}
+<section class="auth-card">
+  <p class="eyebrow">راه‌اندازی اولیه</p>
+  <h1>حساب مدیر را بساز</h1>
+  <p class="muted">این حساب به همهٔ صفحه‌ها و تنظیم دسترسی کاربران دسترسی دارد.</p>
+  <form method="post" class="auth-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label>نام کاربری<input name="username" autocomplete="username" required minlength="3" maxlength="50" autofocus></label>
+    <label>گذرواژه<input type="password" name="password" autocomplete="new-password" required minlength="6"></label>
+    <label>تکرار گذرواژه<input type="password" name="password_confirm" autocomplete="new-password" required minlength="6"></label>
+    <button class="primary-button" type="submit">ساخت حساب مدیر</button>
+  </form>
+</section>
+{% endblock %}

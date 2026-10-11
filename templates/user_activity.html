@@ -1,0 +1,27 @@
+{% extends "auth_base.html" %}
+{% block title %}گزارش فعالیت {{ user.username }}{% endblock %}
+{% block content %}
+<section class="admin-header">
+  <div><p class="eyebrow">گزارش مدیریتی</p><h1>فعالیت‌های {{ user.username }}</h1>
+    <p class="muted">{{ total }} رویداد ثبت شده · گزارش‌گیری {{ user.reports_used }} / {{ user.max_reports if user.max_reports else '∞' }} · ورود موفق {{ user.logins_used }} / {{ user.max_logins if user.max_logins else '∞' }}</p>
+  </div>
+  <a class="secondary-button" href="{{ url_for('auth.users') }}">بازگشت به کاربران</a>
+</section>
+<section class="activity-list">
+  {% for entry in entries %}
+  <article class="activity-card">
+    <header><strong>{{ action_labels.get(entry.action, entry.action) }}</strong><time>{{ entry.created_at }}</time></header>
+    <p>{{ entry.description }}</p>
+    {% if entry.details %}<details><summary>جزئیات رویداد</summary><dl class="activity-details">
+      {% for key, value in entry.details.items() %}<div><dt>{{ key }}</dt><dd>{% if value is mapping or (value is sequence and value is not string) %}{{ value|tojson }}{% elif value is sameas true %}بله{% elif value is sameas false %}خیر{% else %}{{ value if value is not none and value != '' else '—' }}{% endif %}</dd></div>{% endfor %}
+    </dl></details>{% endif %}
+    <footer><span>نشانی شبکه: {{ entry.ip_address or 'نامشخص' }}</span><span class="activity-agent" title="{{ entry.user_agent or '' }}">دستگاه: {{ entry.user_agent or 'نامشخص' }}</span></footer>
+  </article>
+  {% else %}<p class="empty-state">برای این کاربر هنوز رویدادی ثبت نشده است.</p>{% endfor %}
+</section>
+{% if total > page_size %}<nav class="activity-pagination" aria-label="صفحه‌های گزارش">
+  {% if page > 1 %}<a class="secondary-button" href="{{ url_for('auth.user_activity', user_id=user.id, page=page - 1) }}">رویدادهای جدیدتر</a>{% endif %}
+  <span>صفحهٔ {{ page }} از {{ ((total - 1) // page_size) + 1 }}</span>
+  {% if page * page_size < total %}<a class="secondary-button" href="{{ url_for('auth.user_activity', user_id=user.id, page=page + 1) }}">رویدادهای قدیمی‌تر</a>{% endif %}
+</nav>{% endif %}
+{% endblock %}

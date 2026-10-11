@@ -1,0 +1,63 @@
+{% extends "auth_base.html" %}
+{% block title %}مدیریت کاربران{% endblock %}
+{% block content %}
+<section class="admin-header">
+  <div><p class="eyebrow">پنل مدیر</p><h1>مدیریت کاربران</h1>
+  <p class="muted">برای هر حساب، صفحه‌های مجاز را انتخاب و سپس ذخیره کن.</p></div>
+  <a class="secondary-button" href="/">بازگشت به جست‌وجو</a>
+</section>
+<section class="auth-card create-card">
+  <h2>افزودن کاربر</h2>
+  <form method="post" action="{{ url_for('auth.users') }}" class="user-create-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label>نام کاربری<input name="username" required minlength="3" maxlength="50" autocomplete="off"></label>
+    <label>گذرواژهٔ اولیه<input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+    <label>سقف گزارش‌گیری<input name="max_reports" type="number" min="0" max="1000000" value="0" required><small>صفر یعنی نامحدود</small></label>
+    <label>سقف ورود موفق<input name="max_logins" type="number" min="0" max="1000000" value="0" required><small>صفر یعنی نامحدود</small></label>
+    <fieldset class="permission-set"><legend>دسترسی به صفحه‌ها</legend>
+      {% for key, title in pages.items() %}<label class="check-label"><input type="checkbox" name="pages" value="{{ key }}"><span>{{ title }}</span></label>{% endfor %}
+    </fieldset>
+    <label class="check-label admin-check"><input type="checkbox" name="is_admin"><span>مدیر باشد (دسترسی کامل)</span></label>
+    <button class="primary-button" type="submit">ساخت کاربر</button>
+  </form>
+</section>
+<section class="users-list">
+  <h2>حساب‌های ثبت‌شده <span class="count-pill">{{ users|length }}</span></h2>
+  {% for user in users %}
+  <article class="user-card">
+    <form method="post" action="{{ url_for('auth.update_user', user_id=user.id) }}" class="user-edit-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="user-heading">
+        <div><strong>{{ user.username }}</strong><span class="user-meta">{% if user.is_admin %}مدیر{% else %}کاربر{% endif %} · ثبت {{ user.created_at }}</span></div>
+        {% if user.id == admin_id %}<span class="you-pill">حساب شما</span>{% endif %}
+      </div>
+      <div class="usage-summary">
+        <span>گزارش: {{ user.reports_used }} / {{ user.max_reports if user.max_reports else '∞' }}</span>
+        <span>ورود موفق: {{ user.logins_used }} / {{ user.max_logins if user.max_logins else '∞' }}</span>
+        {% if user.must_reset_password %}<strong class="locked-pill">قفل شده؛ بازنشانی گذرواژه لازم است</strong>{% endif %}
+        <a class="activity-link" href="{{ url_for('auth.user_activity', user_id=user.id) }}">گزارش کامل فعالیت</a>
+      </div>
+      <div class="user-permissions">
+        <fieldset class="permission-set"><legend>دسترسی‌ها</legend>
+          {% for key, title in pages.items() %}
+          <label class="check-label"><input type="checkbox" name="pages" value="{{ key }}" {% if key in user.pages or user.is_admin %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}><span>{{ title }}</span></label>
+          {% endfor %}
+        </fieldset>
+        <div class="user-flags">
+          <label class="check-label"><input type="checkbox" name="is_admin" {% if user.is_admin %}checked{% endif %} {% if user.id == admin_id %}disabled{% endif %}><span>مدیر</span></label>
+          <label class="check-label"><input type="checkbox" name="is_active" {% if user.is_active %}checked{% endif %} {% if user.id == admin_id %}disabled{% endif %}><span>حساب فعال</span></label>
+        </div>
+        <label>سقف گزارش‌گیری<input name="max_reports" type="number" min="0" max="1000000" value="{{ user.max_reports }}" required><small>صفر یعنی نامحدود</small></label>
+        <label>سقف ورود موفق<input name="max_logins" type="number" min="0" max="1000000" value="{{ user.max_logins }}" required><small>صفر یعنی نامحدود</small></label>
+        <label class="password-reset">گذرواژهٔ تازه <small>(اختیاری، دست‌کم ۶ نویسه؛ با بازنشانی، سهمیه‌ها هم از نو شمرده می‌شوند)</small>
+          <input type="password" name="new_password" minlength="6" autocomplete="new-password" placeholder="برای حفظ گذرواژه خالی بگذار">
+        </label>
+      </div>
+      <button class="save-button" type="submit">ذخیرهٔ دسترسی‌ها</button>
+    </form>
+  </article>
+  {% else %}
+  <p class="empty-state">هنوز کاربری ساخته نشده است.</p>
+  {% endfor %}
+</section>
+{% endblock %}
